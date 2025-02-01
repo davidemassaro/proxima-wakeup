@@ -1,9 +1,35 @@
+import argparse
 import serial
 import logging, os,time
 from logging.handlers import RotatingFileHandler
 from fastapi import FastAPI, Request
 import uvicorn
 from datetime import datetime
+import socket
+
+com = "COM6"
+debug = True
+send_mode = "tcp"  # tcp or serial
+
+def main():
+    global com, debug, send_mode  # Declare global variables to update them
+    
+    parser = argparse.ArgumentParser(description="Proxima Serial Emulator Script")
+    parser.add_argument("--com", type=str, default=com, help="COM1 or /dev/ttyUSB0 port to use")
+    parser.add_argument("--send_mode", type=str, choices=["tcp", "serial"], default=send_mode, help="Send mode (tcp or serial)")
+    parser.add_argument("--no-debug", action="store_true", help="Enable debug mode", default=True)
+
+    args = parser.parse_args()
+
+    # Update configuration based on arguments
+    com = args.com
+    debug = args.debug
+    send_mode = args.send_mode
+
+    # Your main code logic here
+    print(f"Using COM port: {com}")
+    print(f"Debug mode: {debug}")
+    print(f"Send mode: {send_mode}")
 
 app = FastAPI()
 
@@ -30,21 +56,31 @@ logger.setLevel(logging.INFO)
 logger.addHandler(log_handler)
 logger.addHandler(console_handler)
 
-# Configura la porta COM
-ser = serial.Serial(
-    "COM1",
-    baudrate=9600,
-    bytesize=8,
-    parity="N",
-    stopbits=1,
-    timeout=1,
-    xonxoff=False,
-    rtscts=False,
-    dsrdtr=False,
-    writeTimeout=2,
-)
 
-debug = True
+
+# Configurazione del dispositivo Moxa
+MOXA_IP = "192.168.127.254"
+MOXA_PORT = 4001
+
+
+def send_string_moxa(command):
+    ip=MOXA_IP
+    port=MOXA_PORT
+    try:
+        # Crea un socket TCP
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(1)
+        # Connessione al dispositivo Moxa
+        s.connect((ip, port))
+        # Invia il comando
+        s.sendall(command.encode())
+        # Ricevi la risposta
+        #response = s.recv(1024)
+        # Chiudi la connessione
+        s.close()
+    except Exception as e:
+        logger.warning(f"Failed to communicate with Moxa: {e}")
+        return None
 
 """
 ROOM STATUS IDs:
@@ -56,7 +92,20 @@ ROOM STATUS IDs:
 6 ISPEZIONATA LIBERA
 """
 
-def invia_dati(ser, data):
+def invia_dati(data):
+    # Configura la porta COM
+    ser = serial.Serial(
+        com,
+        baudrate=9600,
+        bytesize=8,
+        parity="N",
+        stopbits=1,
+        timeout=1,
+        xonxoff=False,
+        rtscts=False,
+        dsrdtr=False,
+        writeTimeout=2,
+    )
     try:
         if ser.isOpen():
             ser.close()
@@ -91,10 +140,12 @@ def genera_stringa_stato_stanza(anno, mese, giorno, ora, minuti, numero_stanza, 
     data[16:18] = list(f"{minuti:>2}")  # Minuti in pos 17-18
 
     stringa_completa = "".join(data)
-    logger.info("Sending room status data")
+    logger.info(f"Sending room status data via {send_mode}")
     logger.info(stringa_completa)
-    invia_dati(ser, stringa_completa)
-    logger.info("Room status sent successfully")
+    if send_mode=="tcp":
+        send_string_moxa(stringa_completa)
+    elif send_mode=="serial":
+        invia_dati(stringa_completa)
     return stringa_completa
 
 
@@ -131,10 +182,12 @@ def genera_stringa_addebiti(
     stringa_completa = "".join(data) + chr(
         13
     )  # Aggiunge il carattere ASCII 13 (fine record)
-    logger.info("Sending addebiti data")
+    logger.info(f"Sending addebiti data via {send_mode}")
     logger.info(stringa_completa)
-    invia_dati(ser, stringa_completa)
-    logger.info("Addebiti sent successfully")
+    if send_mode=="tcp":
+        send_string_moxa(stringa_completa)
+    elif send_mode=="serial":
+        invia_dati(stringa_completa)
     # Converti la lista in una stringa
     return stringa_completa
 
@@ -212,8 +265,8 @@ async def billcall_webhook(request: Request):
     )
     return {"status": "success", "message": "Webhook received"}
 
-
 if __name__ == "__main__":
+    main()
     # Esempio di utilizzo
     if debug:
         now = datetime.now()
@@ -237,6 +290,7 @@ if __name__ == "__main__":
         genera_stringa_stato_stanza(
             anno, mese, giorno, ora, minuti, numero_stanza="360", stato="9"
         )
+        
     else:
         uvicorn.run(app, host="0.0.0.0", port=80)
 
