@@ -1,37 +1,83 @@
 import argparse
+import secrets
 import serial
-import logging, os,time
+import logging, os, time
 from logging.handlers import RotatingFileHandler
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends,HTTPException
 import uvicorn
+from typing import Annotated
 from datetime import datetime
 import socket
+from pydantic import BaseModel
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+
+security = HTTPBasic()
+app = FastAPI()
 
 com = "COM6"
 debug = True
 send_mode = "tcp"  # tcp or serial
+# Configurazione del dispositivo Moxa
+moxa_ip = "192.168.127.254"
+moxa_port = 4001
+
+
+
+def authenticate(credentials: HTTPBasicCredentials = Depends(security)):
+    correct_username = secrets.compare_digest(credentials.username, "admin")
+    correct_password = secrets.compare_digest(credentials.password, "REDACTED_SECRET")
+    if not (correct_username and correct_password):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    return credentials
 
 def main():
-    global com, debug, send_mode  # Declare global variables to update them
-    
+    global com, debug, send_mode, moxa_ip, moxa_port  # Declare global variables to update them
+
     parser = argparse.ArgumentParser(description="Proxima Serial Emulator Script")
-    parser.add_argument("--com", type=str, default=com, help="COM1 or /dev/ttyUSB0 port to use")
-    parser.add_argument("--send_mode", type=str, choices=["tcp", "serial"], default=send_mode, help="Send mode (tcp or serial)")
-    parser.add_argument("--no-debug", action="store_true", help="Enable debug mode", default=True)
+    parser.add_argument(
+        "--send_mode",
+        type=str,
+        choices=["tcp", "serial"],
+        required=True,
+        help="Send mode (tcp or serial)",
+    )
+    parser.add_argument(
+        "--com", type=str, help="COM1 or /dev/ttyUSB0 port to use (required if send_mode=serial)"
+    )
+    parser.add_argument(
+        "--moxa_ip", type=str, help="Moxa device IP address (required if send_mode=tcp)"
+    )
+    parser.add_argument(
+        "--moxa_port", type=int, help="Moxa device port (required if send_mode=tcp)"
+    )
+    parser.add_argument("--debug", action="store_true", help="Enable debug mode")
 
     args = parser.parse_args()
+
+    # Basic validation based on send_mode
+    if args.send_mode == "tcp":
+        if not args.moxa_ip or not args.moxa_port:
+            parser.error("--moxa_ip and --moxa_port are required when send_mode is 'tcp'")
+    elif args.send_mode == "serial":
+        if not args.com:
+            parser.error("--com is required when send_mode is 'serial'")
 
     # Update configuration based on arguments
     com = args.com
     debug = args.debug
     send_mode = args.send_mode
+    moxa_ip = args.moxa_ip
+    moxa_port = args.moxa_port
 
-    # Your main code logic here
-    print(f"Using COM port: {com}")
-    print(f"Debug mode: {debug}")
+    # Main code logic
     print(f"Send mode: {send_mode}")
+    if send_mode == "tcp":
+        print(f"Moxa IP: {moxa_ip}")
+        print(f"Moxa Port: {moxa_port}")
+    else:
+        print(f"Using COM port: {com}")
+    print(f"Debug mode: {debug}")
 
-app = FastAPI()
 
 log_path = os.path.join(os.getcwd(), "log_serial.log")
 
@@ -56,16 +102,9 @@ logger.setLevel(logging.INFO)
 logger.addHandler(log_handler)
 logger.addHandler(console_handler)
 
-
-
-# Configurazione del dispositivo Moxa
-MOXA_IP = "192.168.127.254"
-MOXA_PORT = 4001
-
-
 def send_string_moxa(command):
-    ip=MOXA_IP
-    port=MOXA_PORT
+    ip = moxa_ip
+    port = moxa_port
     try:
         # Crea un socket TCP
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -75,12 +114,13 @@ def send_string_moxa(command):
         # Invia il comando
         s.sendall(command.encode())
         # Ricevi la risposta
-        #response = s.recv(1024)
+        # response = s.recv(1024)
         # Chiudi la connessione
         s.close()
     except Exception as e:
         logger.warning(f"Failed to communicate with Moxa: {e}")
         return None
+
 
 """
 ROOM STATUS IDs:
@@ -91,6 +131,7 @@ ROOM STATUS IDs:
 5 ISPEZIONATA OCCUPATA
 6 ISPEZIONATA LIBERA
 """
+
 
 def invia_dati(data):
     # Configura la porta COM
@@ -142,9 +183,9 @@ def genera_stringa_stato_stanza(anno, mese, giorno, ora, minuti, numero_stanza, 
     stringa_completa = "".join(data)
     logger.info(f"Sending room status data via {send_mode}")
     logger.info(stringa_completa)
-    if send_mode=="tcp":
+    if send_mode == "tcp":
         send_string_moxa(stringa_completa)
-    elif send_mode=="serial":
+    elif send_mode == "serial":
         invia_dati(stringa_completa)
     return stringa_completa
 
@@ -184,18 +225,22 @@ def genera_stringa_addebiti(
     )  # Aggiunge il carattere ASCII 13 (fine record)
     logger.info(f"Sending addebiti data via {send_mode}")
     logger.info(stringa_completa)
-    if send_mode=="tcp":
+    if send_mode == "tcp":
         send_string_moxa(stringa_completa)
-    elif send_mode=="serial":
+    elif send_mode == "serial":
         invia_dati(stringa_completa)
     # Converti la lista in una stringa
     return stringa_completa
 
 
+class RoomStatus(BaseModel):
+    room: str
+    status: str
+
+
 @app.post("/room-status")
-async def roomstatus_webhook(request: Request):
-    # Ricevi e stampa il corpo della richiesta
-    body = await request.json()
+async def roomstatus_webhook(request: Request, payload: RoomStatus,credentials: HTTPBasicCredentials = Depends(authenticate)):
+    body = payload.model_dump()
     print("\n=== Received Webhook ===")
     print("Headers:", dict(request.headers))
     print("Body:", body)
@@ -220,8 +265,14 @@ async def roomstatus_webhook(request: Request):
     return {"status": "success", "message": "Webhook received"}
 
 
+class BillCall(BaseModel):
+    room: str
+    status: str
+    call_destination: str
+    call_duration_formatted: str
+
 @app.post("/bill-call")
-async def billcall_webhook(request: Request):
+async def billcall_webhook(request: Request, payload: BillCall,credentials: HTTPBasicCredentials = Depends(authenticate)):
     # Ricevi e stampa il corpo della richiesta
     body = await request.json()
     print("\n=== Received Webhook ===")
@@ -233,10 +284,7 @@ async def billcall_webhook(request: Request):
     numero_stanza = body.get("room")
     stato = body.get("status")
     call_destination = stato.get("call_destination")
-    call_duration_seconds = stato.get("call_duration_seconds")
     call_duration_formatted = stato.get("call_duration_formatted")
-    service_class_code = stato.get("service_class_code")
-    service_class_name = stato.get("service_class_name")
 
     # Converti la durata della chiamata in ore, minuti e secondi
     durata_ore, durata_minuti, durata_secondi = map(
@@ -265,6 +313,7 @@ async def billcall_webhook(request: Request):
     )
     return {"status": "success", "message": "Webhook received"}
 
+
 if __name__ == "__main__":
     main()
     # Esempio di utilizzo
@@ -290,7 +339,7 @@ if __name__ == "__main__":
         genera_stringa_stato_stanza(
             anno, mese, giorno, ora, minuti, numero_stanza="360", stato="9"
         )
-        
+
     else:
         uvicorn.run(app, host="0.0.0.0", port=80)
 
