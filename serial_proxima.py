@@ -10,6 +10,9 @@ from datetime import datetime
 import socket
 from pydantic import BaseModel
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+import pytz
+timezone = pytz.timezone('Europe/Rome')
+
 
 security = HTTPBasic()
 app = FastAPI()
@@ -138,7 +141,7 @@ def invia_dati(data):
     ser = serial.Serial(
         com,
         baudrate=9600,
-        bytesize=8,
+        bytesize=7,
         parity="N",
         stopbits=1,
         timeout=1,
@@ -165,6 +168,14 @@ def invia_dati(data):
 
 
 def genera_stringa_stato_stanza(anno, mese, giorno, ora, minuti, numero_stanza, stato):
+    if stato=="1":
+        stato="8"
+    elif stato=="2":
+        stato="8"
+    elif stato=="3":
+        stato="9"
+    elif stato=="4":
+        stato="9"
     # Inizializza la stringa con spazi vuoti per 62 caratteri (posizione massima)
     data = [" "] * 62
 
@@ -180,7 +191,7 @@ def genera_stringa_stato_stanza(anno, mese, giorno, ora, minuti, numero_stanza, 
     data[14:16] = list(f"{ora:02d}")  # Ora in pos 15-16
     data[16:18] = list(f"{minuti:02d}")  # Minuti in pos 17-18
 
-    stringa_completa = "".join(data)
+    stringa_completa = "".join(data)+chr(13)
     logger.info(f"Sending room status data via {send_mode}")
     logger.info(stringa_completa)
     if send_mode == "tcp":
@@ -249,7 +260,7 @@ async def roomstatus_webhook(request: Request, payload: RoomStatus,credentials: 
     numero_stanza = body.get("room")
     stato = body.get("status")
 
-    now = datetime.now()
+    now = datetime.now(timezone)
     anno = now.year % 100  # Ultime due cifre dell'anno
     mese = now.month
     giorno = now.day
@@ -267,7 +278,6 @@ async def roomstatus_webhook(request: Request, payload: RoomStatus,credentials: 
 
 class BillCall(BaseModel):
     room: str
-    status: str
     call_destination: str
     call_duration_formatted: str
 
@@ -282,16 +292,15 @@ async def billcall_webhook(request: Request, payload: BillCall,credentials: HTTP
 
     # Estrai i dati dal corpo della richiesta
     numero_stanza = body.get("room")
-    stato = body.get("status")
-    call_destination = stato.get("call_destination")
-    call_duration_formatted = stato.get("call_duration_formatted")
+    call_destination = body.get("call_destination")
+    call_duration_formatted = body.get("call_duration_formatted")
 
     # Converti la durata della chiamata in ore, minuti e secondi
     durata_ore, durata_minuti, durata_secondi = map(
         int, call_duration_formatted.split(":")
     )
 
-    now = datetime.now()
+    now = datetime.now(timezone)
     anno = now.year % 100  # Ultime due cifre dell'anno
     mese = now.month
     giorno = now.day
@@ -318,7 +327,7 @@ if __name__ == "__main__":
     main()
     # Esempio di utilizzo
     if debug:
-        now = datetime.now()
+        now = datetime.now(timezone)
         anno = now.year % 100  # Ultime due cifre dell'anno
         mese = now.month
         giorno = now.day
@@ -337,11 +346,11 @@ if __name__ == "__main__":
             durata_secondi=30,
         )
         genera_stringa_stato_stanza(
-            anno, mese, giorno, ora, minuti, numero_stanza="360", stato="9"
+            anno, mese, giorno, ora, minuti, numero_stanza="360", stato="2"
         )
 
     else:
-        uvicorn.run(app, host="0.0.0.0", port=80)
+        uvicorn.run(app, host="0.0.0.0", port=8000)
 
 """
 curl -X POST http://127.0.0.1/bill-call -H "Content-Type: application/json" -d "{\"room\": \"360\", \"status\": { \"call_destination\": \"0458403665\", \"call_duration_seconds\": \"000012\", \"call_duration_formatted\": \"01:10:12\", \"service_class_code\": \"N\", \"service_class_name\": \"National\"}}"
