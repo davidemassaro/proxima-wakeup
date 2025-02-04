@@ -174,11 +174,11 @@ def genera_stringa_stato_stanza(anno, mese, giorno, ora, minuti, numero_stanza, 
     data[61] = "s"  # Valore predefinito di "n.r.right" in pos 62
 
     # Inserisci i dati per giorno/ora stato camera avanzato
-    data[7:9] = list(f"{anno:>2}")  # Anno in pos 8-9
-    data[9:11] = list(f"{mese:>2}")  # Mese in pos 10-11
-    data[11:13] = list(f"{giorno:>2}")  # Giorno in pos 12-13
-    data[14:16] = list(f"{ora:>2}")  # Ora in pos 15-16
-    data[16:18] = list(f"{minuti:>2}")  # Minuti in pos 17-18
+    data[7:9] = list(f"{anno:02d}")  # Anno in pos 8-9
+    data[9:11] = list(f"{mese:02d}")  # Mese in pos 10-11
+    data[11:13] = list(f"{giorno:02d}")  # Giorno in pos 12-13
+    data[14:16] = list(f"{ora:02d}")  # Ora in pos 15-16
+    data[16:18] = list(f"{minuti:02d}")  # Minuti in pos 17-18
 
     stringa_completa = "".join(data)
     logger.info(f"Sending room status data via {send_mode}")
@@ -214,7 +214,7 @@ def genera_stringa_addebiti(
     data[14:16] = list(f"{ora:02d}")  # Ora in pos 15-16
     data[16:18] = list(f"{minuti:02d}")  # Minuti in pos 17-18
     data[19:22] = list(f"{interno_chiamante:>3}")  # Interno chiamante in pos 20-22
-    data[24] = f"{durata_ore}"  # Durata ore in pos 25
+    #data[24] = f"{durata_ore:01d}"  # Durata ore in pos 25
     data[25:27] = list(f"{durata_minuti:02d}")  # Durata minuti in pos 26-27
     data[27:29] = list(f"{durata_secondi:02d}")  # Durata secondi in pos 28-29
     data[40:54] = list(f"{numero_chiamato:<14}")  # Numero chiamato in pos 41-54
