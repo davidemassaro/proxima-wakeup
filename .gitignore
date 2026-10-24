@@ -1,1 +1,8 @@
 log_serial.log
+*.log
+*.csv
+wakeup_uuids.txt
+.venv/
+__pycache__/
+*.pyc
+.env

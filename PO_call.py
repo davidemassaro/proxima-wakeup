@@ -5,6 +5,14 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
+# Load .env (no new dependency: KEY=VALUE lines, '#' comments)
+if os.path.exists(".env"):
+    for line in open(".env"):
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, v = line.split("=", 1)
+            os.environ.setdefault(k, v)
+
 import logging
 from logging.handlers import RotatingFileHandler
 log_path = os.path.join(os.getcwd(), 'log.log')
@@ -25,19 +33,19 @@ def log_message(message):
     logger.info(message)
 
 def sendmail(subject, body):
-    from_addr = "redacted@example.com"
-    to_addr = "redacted@example.com"
+    from_addr = os.environ["MAIL_FROM"]
+    to_addr = os.environ["MAIL_TO"]
     # Create the email message
     msg = MIMEMultipart()
     msg['From'] = from_addr
     msg['To'] = to_addr
-    msg['Cc'] = "redacted@example.com"
+    msg['Cc'] = to_addr
     msg['Subject'] = subject
     msg.attach(MIMEText(body, 'html'))
-    
 
-    smtp_server="smtp.example.com"
-    smtp_port=25
+
+    smtp_server = os.environ["SMTP_SERVER"]
+    smtp_port = int(os.environ.get("SMTP_PORT", 25))
     # Send the email
     try:
         server = smtplib.SMTP(smtp_server, smtp_port)
@@ -51,9 +59,9 @@ def sendmail(subject, body):
 
 def sendcall(message,extension):
     current_time = datetime.now()
-    url = "https://voip.example.com/api/v2/phone/robot-call"
-    username = "api"
-    password = "REDACTED_SECRET"
+    url = os.environ["PHONE_API_URL"]
+    username = os.environ["PHONE_API_USERNAME"]
+    password = os.environ["PHONE_API_PASSWORD"]
     body = {
         "caller_id_number": "WU-Camera"+extension,
         "number": po_extension,
@@ -64,10 +72,10 @@ def sendcall(message,extension):
     log_message(message=("esito call response "+response.text+" alle ore "+current_time.strftime('%Y-%m-%d %H:%M:%S')))
 
 
-url = "https://voip.example.com/api/ucpanel/auth/login"
+url = os.environ["UCPANEL_LOGIN_URL"]
 payload = {
-    "username": "560",
-    "password": "REDACTED_SECRET"
+    "username": os.environ["UCPANEL_USERNAME"],
+    "password": os.environ["UCPANEL_PASSWORD"]
 }
 
 response = requests.post(url, json=payload, verify=False)
@@ -91,7 +99,7 @@ if response.status_code == 200:
     token = response.json().get('token')
     
     # Use the token to make a request to the rooms endpoint
-    rooms_url = f"https://voip.example.com/api/ucpanel/hotel/rooms?token={token}"
+    rooms_url = f"{os.environ['UCPANEL_ROOMS_URL']}?token={token}"
     rooms_response = requests.get(rooms_url, verify=False)
     
     if rooms_response.status_code == 200:

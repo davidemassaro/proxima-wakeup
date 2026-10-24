@@ -2,6 +2,14 @@ import argparse
 import secrets
 import serial
 import logging, os, time
+
+# Load .env (no new dependency: KEY=VALUE lines, '#' comments)
+if os.path.exists(".env"):
+    for line in open(".env"):
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, v = line.split("=", 1)
+            os.environ.setdefault(k, v)
 from logging.handlers import RotatingFileHandler
 from fastapi import FastAPI, Request, Depends,HTTPException
 import uvicorn
@@ -27,8 +35,8 @@ moxa_port = 4001
 
 
 def authenticate(credentials: HTTPBasicCredentials = Depends(security)):
-    correct_username = secrets.compare_digest(credentials.username, "admin")
-    correct_password = secrets.compare_digest(credentials.password, "REDACTED_SECRET")
+    correct_username = secrets.compare_digest(credentials.username, os.environ["WEBHOOK_USERNAME"])
+    correct_password = secrets.compare_digest(credentials.password, os.environ["WEBHOOK_PASSWORD"])
     if not (correct_username and correct_password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     return credentials
@@ -340,7 +348,7 @@ if __name__ == "__main__":
             ora,
             minuti,
             interno_chiamante="360",
-            numero_chiamato="3404582108",
+            numero_chiamato="3331234567",
             durata_ore=0,
             durata_minuti=5,
             durata_secondi=30,
@@ -353,6 +361,6 @@ if __name__ == "__main__":
         uvicorn.run(app, host="0.0.0.0", port=8000)
 
 """
-curl -X POST http://127.0.0.1/bill-call -H "Content-Type: application/json" -d "{\"room\": \"360\", \"status\": { \"call_destination\": \"0458403665\", \"call_duration_seconds\": \"000012\", \"call_duration_formatted\": \"01:10:12\", \"service_class_code\": \"N\", \"service_class_name\": \"National\"}}"
+curl -X POST http://127.0.0.1/bill-call -H "Content-Type: application/json" -d "{\"room\": \"360\", \"status\": { \"call_destination\": \"0451234567\", \"call_duration_seconds\": \"000012\", \"call_duration_formatted\": \"01:10:12\", \"service_class_code\": \"N\", \"service_class_name\": \"National\"}}"
 curl -X POST http://127.0.0.1/room-status -H "Content-Type: application/json" -d "{\"room\": \"360\", \"status\": \"9\"}"
 """
