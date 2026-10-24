@@ -1,9 +1,9 @@
 # proxima-wakeup
 
-Two small integration scripts that sit between the [Proxima Hotel module](https://wiki.myproxima.info/knowledge-base/documentazione-per-lintegrazione-del-modulo-hotel-proxima-tramite-api/) (a PBX/hotel-telephony system following the FIAS protocol) and the hotel's PMS / legacy serial call-accounting system.
+Two small integration scripts that sit between the [Proxima Hotel module](https://wiki.myproxima.info/knowledge-base/documentazione-per-lintegrazione-del-modulo-hotel-proxima-tramite-api/) (a PBX/hotel-telephony system following the FIAS protocol) and [Scrigno](https://www.zucchetti.it/website/cms/prodotto/6743-scrigno---pms.html), the hotel PMS by [GP Dati](https://www.gpdati.com/) (now Zucchetti).
 
 - **`PO_call.py`** — polls Proxima for expired wakeup calls and notifies the front desk (email + an automated voice call back to the room).
-- **`serial_proxima.py`** — receives Proxima's webhooks (room status, call billing) and forwards them, re-encoded as fixed-width serial strings, to a legacy PMS over TCP (Moxa serial-to-Ethernet gateway) or a real serial port.
+- **`serial_proxima.py`** — receives Proxima's webhooks (room status, call billing) and forwards them, re-encoded as fixed-width serial strings matching Scrigno's serial call-accounting protocol, over TCP (Moxa serial-to-Ethernet gateway) or a real serial port.
 
 ## How it fits with Proxima
 
@@ -37,7 +37,7 @@ A small FastAPI app exposing two webhook endpoints that Proxima can be configure
 | `POST /room-status` | Stato camera | `{"room": "<replace_room_number>", "status": "<replace_maid_status>"}` |
 | `POST /bill-call` | Billing – Telefonata | `{"room": "...", "call_destination": "<replace_call_dst>", "call_duration_formatted": "<replace_call_billsec_timed>"}` |
 
-Each request is translated into a fixed-width (62-char) record matching the legacy PMS serial protocol and sent either over TCP to a Moxa serial gateway or directly to a COM/serial port.
+Each request is translated into a fixed-width (62-char) record matching Scrigno's serial call-accounting protocol and sent either over TCP to a Moxa serial gateway or directly to a COM/serial port.
 
 ```bash
 python serial_proxima.py --send_mode tcp --moxa_ip 192.168.1.50 --moxa_port 4001
